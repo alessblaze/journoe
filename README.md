@@ -1,4 +1,7 @@
 # Journal
+
+![Journoe banner](./journoe-banner.png)
+
 A highly secure, offline-first personal journaling web application featuring double-ratchet style client-side encryption, real-time optimistic concurrency control, and multi-device session handoff.
 
 Built with **React** (TypeScript, Vite) and **Go** (Gin, gorm) with a **PostgreSQL** database.
