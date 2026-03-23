@@ -1,0 +1,26 @@
+services:
+  frontend:
+    container_name: journo-frontend
+    build:
+      context: ..
+      dockerfile: docker/frontend/Dockerfile
+      args:
+        VITE_API_URL: /api
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
+  backend:
+    container_name: journo-backend
+    build:
+      context: ..
+      dockerfile: docker/backend/Dockerfile
+    env_file:
+      - ./.env.supabase
+    environment:
+      GIN_MODE: release # Set debug for debug
+      SERVER_PORT: 8080
+    restart: unless-stopped
+
