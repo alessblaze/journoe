@@ -42,3 +42,41 @@ Vite will start the client cleanly on `http://localhost:5173`.
 1. Visit `http://localhost:5173`.
 2. Register a new test user account.
 3. The app will immediately generate an unrecoverable 64-character encryption key in your browser. Be sure to copy it down if you plan to test recovering sessions across multiple browsers!
+
+## 6. Docker Setup
+If you want to run the full stack with Docker instead of managing Go, Vite, and PostgreSQL separately, use the bundled Compose file.
+
+### Prepare the Docker environment
+```bash
+cd docker
+cp .env.localhost.example .env.localhost
+```
+Update at least these values in `docker/.env.localhost`:
+- `JWT_SECRET`
+- `INITIAL_ADMIN_EMAIL`
+- `INITIAL_ADMIN_PASSWORD`
+- `DB_PASSWORD` / `POSTGRES_PASSWORD` if you do not want the local defaults
+- `LOCALHOST_DEV_COOKIES` should stay `true` for plain HTTP localhost Docker usage
+
+### Start the stack
+From the repository root:
+```bash
+docker compose -f docker/docker-compose.yml up --build -d
+```
+This starts:
+- Nginx frontend on port `80`
+- Go backend on port `8080` inside the Docker network
+- PostgreSQL in a named volume
+
+### Access the app
+Open `http://localhost` in your browser.
+
+### Stop the stack
+```bash
+docker compose -f docker/docker-compose.yml down
+```
+
+If you also want to remove the database volume:
+```bash
+docker compose -f docker/docker-compose.yml down -v
+```

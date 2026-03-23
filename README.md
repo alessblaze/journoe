@@ -39,3 +39,29 @@ npm install
 npm run dev
 ```
 The frontend runs on port `:5173`. Open `http://localhost:5173` in your browser.
+
+## Docker Setup
+
+The Docker stack runs the frontend, backend, and PostgreSQL together through [docker/docker-compose.yml](./docker/docker-compose.yml).
+
+### 1. Prepare Docker environment
+```bash
+cd docker
+cp .env.localhost.example .env.localhost
+# Edit .env.localhost to change JWT_SECRET, admin credentials, or DB passwords
+```
+
+### 2. Start the stack
+```bash
+docker compose -f docker/docker-compose.yml up --build -d
+```
+
+### 3. Open the app
+Visit `http://localhost` in your browser.
+
+### 4. Stop the stack
+```bash
+docker compose -f docker/docker-compose.yml down
+```
+
+The PostgreSQL data is stored in the named Docker volume `postgres_data`.
