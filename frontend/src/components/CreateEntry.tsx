@@ -94,8 +94,14 @@ const CreateEntry = ({ onClose, onSave, isLoading, initialTitle = '', initialCon
     } finally {
       saveInFlightRef.current = false;
       if (autosaveQueuedRef.current) {
-        autosaveQueuedRef.current = false;
-        void saveDraft(true);
+        // A successful manual save supersedes any autosave that queued while it was in flight.
+        // Replaying that queued autosave can resend a stale version after the editor closes.
+        if (isAutoSave) {
+          autosaveQueuedRef.current = false;
+          void saveDraft(true);
+        } else {
+          autosaveQueuedRef.current = false;
+        }
       }
     }
   };

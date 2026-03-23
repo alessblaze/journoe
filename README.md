@@ -4,6 +4,8 @@
 
 A highly secure, offline-first personal journaling web application featuring double-ratchet style client-side encryption, real-time optimistic concurrency control, and multi-device session handoff.
 
+Journoe is alpha. there can be bugs and vulnerablities.
+
 Built with **React** (TypeScript, Vite) and **Go** (Gin, gorm) with a **PostgreSQL** database.
 
 ## Architecture & Security

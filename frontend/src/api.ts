@@ -1,5 +1,17 @@
 import { Entry } from './types';
 
+export class ApiError extends Error {
+  status: number;
+  details: any;
+
+  constructor(message: string, status: number, details: any) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.details = details;
+  }
+}
+
 // @ts-ignore: import.meta.env is injected by Vite
 const API_URL = (import.meta as any).env.VITE_API_URL || 'http://localhost:8080/api';
 
@@ -65,7 +77,7 @@ export const api = {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Request failed' }));
-      throw new Error(error.error || 'Request failed');
+      throw new ApiError(error.error || 'Request failed', response.status, error);
     }
 
     return response.json();

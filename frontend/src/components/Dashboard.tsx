@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../AuthContext';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import { cryptoService } from '../crypto';
 import sseService, { SSEEvent } from '../sse';
 import CreateEntry from './CreateEntry';
@@ -221,6 +221,26 @@ const Dashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [encryptionKey]);
 
+  const loadLatestEncryptedEntry = async (entryId: string | number): Promise<Entry | null> => {
+    if (!encryptionKey) {
+      return null;
+    }
+
+    const encryptedEntry = await api.entries.get(entryId);
+    const key = await cryptoService.importKey(encryptionKey);
+    const decryptedContent = await cryptoService.decrypt(encryptedEntry.content, key);
+    const decryptedTitle = encryptedEntry.title ? await cryptoService.decrypt(encryptedEntry.title, key) : '';
+    const decryptedMood = encryptedEntry.mood ? await cryptoService.decrypt(encryptedEntry.mood, key) : '';
+
+    return {
+      ...encryptedEntry,
+      content: decryptedContent,
+      title: decryptedTitle || 'Untitled',
+      mood: decryptedMood,
+      is_sticky: encryptedEntry.is_sticky,
+    };
+  };
+
   const loadEntries = async () => {
     try {
       setLoading(true);
@@ -392,7 +412,22 @@ const Dashboard = () => {
         setEditingEntry(updated);
       }
     } catch (error: any) {
-      setError('Failed to update entry: ' + error.message);
+      if (error instanceof ApiError && error.status === 409) {
+        try {
+          const latestEntry = await loadLatestEncryptedEntry(editingEntry.id);
+          if (latestEntry) {
+            editVersionRef.current = latestEntry.version;
+            setEntries(prev => prev.map(e => e.id === latestEntry.id ? latestEntry : e));
+            setSelectedEntry(prev => prev?.id === latestEntry.id ? latestEntry : prev);
+            setEditingEntry(latestEntry);
+          }
+          setError('This entry changed elsewhere, so the latest version was loaded. Review it and re-apply your edits before saving again.');
+        } catch {
+          setError(error.message);
+        }
+      } else {
+        setError('Failed to update entry: ' + error.message);
+      }
     } finally {
       setCreating(false);
     }
