@@ -208,7 +208,7 @@ const AdminPanel = ({ onClose }: { onClose: () => void }) => {
                       maxLength={PASSWORD_MAX}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="New Password (8-128 chars)"
+                      placeholder="New Password (8-72 chars)"
                       className="w-full bg-transparent text-white text-xl placeholder-zinc-600 border-b-2 border-zinc-700 focus:border-[#FFB900] pb-2 outline-none transition-colors"
                     />
                     <div className="flex justify-end gap-4 mt-8">

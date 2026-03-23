@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"journal-app/models"
+	"log"
 	"net/http"
 	"os"
 	"sync"
@@ -86,7 +87,7 @@ func SSEHandler(c *gin.Context) {
 	}
 
 	if os.Getenv("DEBUGLOGS") == "true" {
-		fmt.Printf("SSE: User %d connected\n", userID)
+		log.Printf("SSE: User %d connected", userID)
 	}
 
 	c.Header("Content-Type", "text/event-stream")
@@ -101,7 +102,7 @@ func SSEHandler(c *gin.Context) {
 	defer func() {
 		RemoveClient(userID, eventChan)
 		if os.Getenv("DEBUGLOGS") == "true" {
-			fmt.Printf("SSE: Removed client %d from pool\n", userID)
+			log.Printf("SSE: Removed client %d from pool", userID)
 		}
 	}()
 

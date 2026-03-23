@@ -5,7 +5,11 @@ services:
       context: ..
       dockerfile: docker/frontend/Dockerfile
       args:
-        VITE_API_URL: /api
+        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-1x00000000000000000000AA}
+        VITE_ALLOWED_HOSTS: ${VITE_ALLOWED_HOSTS:-}
+    env_file:
+      - ./.env.frontend
     depends_on:
       - backend
     ports:
@@ -22,5 +26,7 @@ services:
     environment:
       GIN_MODE: release # Set debug for debug
       SERVER_PORT: 8080
+    ports:
+      - "8081:8080"
     restart: unless-stopped
 

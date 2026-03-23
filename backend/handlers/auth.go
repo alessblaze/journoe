@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
 	"journal-app/config"
 	"journal-app/models"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -48,7 +48,7 @@ func verifyTurnstile(token string, remoteIP string) bool {
 
 	resp, err := http.PostForm("https://challenges.cloudflare.com/turnstile/v0/siteverify", formData)
 	if err != nil {
-		fmt.Printf("Turnstile verification error: %v\n", err)
+		log.Printf("Turnstile verification error: %v", err)
 		return false
 	}
 	defer resp.Body.Close()
@@ -62,24 +62,19 @@ func verifyTurnstile(token string, remoteIP string) bool {
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		if os.Getenv("DEBUGLOGS") == "true" {
-			fmt.Printf("[Turnstile] Validation JSON decode error: %v\n", err)
+			log.Printf("[Turnstile] Validation JSON decode error: %v", err)
 		}
 		return false
 	}
 
 	if os.Getenv("DEBUGLOGS") == "true" {
-		fmt.Printf("[Turnstile] Validation result for token %s...: %v\n", token[:min(10, len(token))], result.Success)
+		log.Printf("[Turnstile] Validation result: %v", result.Success)
 	}
 
 	return result.Success
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
+
 
 func Register(c *gin.Context) {
 	// Reject requests from already-authenticated sessions to prevent account spam
@@ -249,7 +244,7 @@ func Refresh(c *gin.Context) {
 	refreshToken, err := extractTokenFromCookieOrHeader(c, RefreshTokenCookie)
 	if err != nil {
 		if os.Getenv("DEBUGLOGS") == "true" {
-			fmt.Printf("Refresh: token missing: %v\n", err)
+			log.Printf("Refresh: token missing: %v", err)
 		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Refresh token missing"})
 		return
@@ -258,7 +253,7 @@ func Refresh(c *gin.Context) {
 	claims, err := ValidateRefreshToken(refreshToken)
 	if err != nil {
 		if os.Getenv("DEBUGLOGS") == "true" {
-			fmt.Printf("Refresh: ValidateRefreshToken failed: %v\n", err)
+			log.Printf("Refresh: ValidateRefreshToken failed: %v", err)
 		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired refresh token"})
 		return
@@ -267,7 +262,7 @@ func Refresh(c *gin.Context) {
 	userID, err := extractUserIDFromClaims(claims)
 	if err != nil {
 		if os.Getenv("DEBUGLOGS") == "true" {
-			fmt.Printf("Refresh: extractUserID failed: %v\n", err)
+			log.Printf("Refresh: extractUserID failed: %v", err)
 		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token payload"})
 		return
@@ -281,7 +276,7 @@ func Refresh(c *gin.Context) {
 	}
 	if tokenVersion != user.PasswordVersion {
 		if os.Getenv("DEBUGLOGS") == "true" {
-			fmt.Printf("Refresh: revoked! DB version: %q, Token version: %q\n", user.PasswordVersion, tokenVersion)
+			log.Printf("Refresh: revoked! DB version: %q, Token version: %q", user.PasswordVersion, tokenVersion)
 		}
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Session revoked due to password change"})
 		return

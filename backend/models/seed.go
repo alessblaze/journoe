@@ -40,11 +40,16 @@ func SeedInitialData(db *gorm.DB) {
 		adminPass := os.Getenv("INITIAL_ADMIN_PASSWORD")
 		if adminPass == "" {
 			bytes := make([]byte, 16)
-			rand.Read(bytes) // ignore err for simplicity
+			if _, err := rand.Read(bytes); err != nil {
+				log.Fatal("Failed to generate random admin password: ", err)
+			}
 			adminPass = hex.EncodeToString(bytes)
 		}
 
-		hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(adminPass), bcrypt.DefaultCost)
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(adminPass), bcrypt.DefaultCost)
+		if err != nil {
+			log.Fatal("Failed to hash admin password: ", err)
+		}
 		admin := User{
 			Username:        "Admin",
 			Email:           adminEmail,
