@@ -657,7 +657,7 @@ const Dashboard = () => {
             )}
 
             {showSettings && (
-              <Settings onClose={() => setShowSettings(false)} />
+              <Settings onClose={() => setShowSettings(false)} entries={entries} />
             )}
 
             {showAdminPanel && (

@@ -6,11 +6,12 @@ import PasswordInput from './PasswordInput';
 import Modal from './Modal';
 import { useToast } from '../ToastContext';
 import { keyStorage } from '../keyStorage';
+import { extractDisplayHtml } from './LexicalEditor';
 
 const USERNAME_MAX = 64;
 const PASSWORD_MAX = 72;
 
-const Settings = ({ onClose }: { onClose: () => void }) => {
+const Settings = ({ onClose, entries }: { onClose: () => void; entries?: any[] }) => {
   const [activeTab, setActiveTab] = useState('security');
   const [loading, setLoading] = useState(false);
   const [newKey, setNewKey] = useState<string | null>(null);
@@ -28,6 +29,7 @@ const Settings = ({ onClose }: { onClose: () => void }) => {
   const [revealPasswordError, setRevealPasswordError] = useState('');
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
   const [revealingKey, setRevealingKey] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const { encryptionKey, storeEncryptionKey, clearEncryptionKey, user, setUser } = useAuth();
   const { showError, showSuccess } = useToast();
 
@@ -222,6 +224,108 @@ const Settings = ({ onClose }: { onClose: () => void }) => {
     }
   };
 
+  const extractPlainText = (rawContent: string): string => {
+    const html = extractDisplayHtml(rawContent);
+    return new DOMParser().parseFromString(html, 'text/html').body.textContent || '';
+  };
+
+  const exportAsText = async () => {
+    if (!entries || entries.length === 0) {
+      showError('No entries to export');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const lines: string[] = [];
+      lines.push('='.repeat(80));
+      lines.push(`JOURNAL EXPORT - ${new Date().toLocaleDateString()}`);
+      lines.push(`Total Entries: ${entries.length}`);
+      lines.push('='.repeat(80));
+      lines.push('');
+
+      const sortedEntries = [...entries].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      sortedEntries.forEach((entry, index) => {
+        lines.push('-'.repeat(80));
+        lines.push(`Entry #${index + 1}`);
+        lines.push(`Title: ${entry.title}`);
+        lines.push(`Date: ${new Date(entry.created_at).toLocaleString()}`);
+        if (entry.mood) {
+          lines.push(`Mood: ${entry.mood}`);
+        }
+        lines.push('-'.repeat(80));
+        
+        const plainText = extractPlainText(entry.content);
+        lines.push(plainText);
+        lines.push('');
+        lines.push('');
+      });
+
+      const content = lines.join('\n');
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `journal-export-${new Date().toISOString().split('T')[0]}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      showSuccess('Exported as text file successfully');
+    } catch (error: any) {
+      showError('Failed to export: ' + error.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportAsMarkdown = async () => {
+    if (!entries || entries.length === 0) {
+      showError('No entries to export');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      let markdown = `# Journal Export\n\n`;
+      markdown += `**Export Date:** ${new Date().toLocaleString()}\n`;
+      markdown += `**Total Entries:** ${entries.length}\n\n---\n\n`;
+
+      const sortedEntries = [...entries].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      sortedEntries.forEach((entry) => {
+        markdown += `## ${entry.title}\n\n`;
+        markdown += `**Date:** ${new Date(entry.created_at).toLocaleString()}\n\n`;
+        if (entry.mood) {
+          markdown += `**Mood:** ${entry.mood}\n\n`;
+        }
+        markdown += `**Content:**\n\n`;
+        
+        const plainText = extractPlainText(entry.content);
+        markdown += plainText + '\n\n';
+        markdown += `---\n\n`;
+      });
+
+      const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `journal-export-${new Date().toISOString().split('T')[0]}.md`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      showSuccess('Exported as Markdown file successfully');
+    } catch (error: any) {
+      showError('Failed to export: ' + error.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (newKey) {
     return (
       <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
@@ -323,6 +427,29 @@ const Settings = ({ onClose }: { onClose: () => void }) => {
         <div className="flex-1 p-6 md:p-12 overflow-y-auto bg-[#111]">
           {activeTab === 'account' ? (
             <div className="max-w-2xl space-y-12">
+              {/* Export Journal */}
+              <div>
+                <h3 className="text-2xl font-light text-white mb-6">Export Journal</h3>
+                <p className="text-zinc-400 mb-6 text-sm">
+                  Download all your journal entries as a text or markdown file.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <button
+                    onClick={exportAsText}
+                    disabled={exporting || !entries || entries.length === 0}
+                    className="flex-1 bg-zinc-800 text-white px-6 py-3 font-bold tracking-widest uppercase text-sm hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+                  >
+                    {exporting ? 'EXPORTING...' : 'EXPORT AS TEXT'}
+                  </button>
+                  <button
+                    onClick={exportAsMarkdown}
+                    disabled={exporting || !entries || entries.length === 0}
+                    className="flex-1 bg-[#0078D7] text-white px-6 py-3 font-bold tracking-widest uppercase text-sm hover:bg-[#005a9e] disabled:opacity-50 transition-colors"
+                  >
+                    {exporting ? 'EXPORTING...' : 'EXPORT AS MARKDOWN'}
+                  </button>
+                </div>
+              </div>
               {/* Profile */}
               <form onSubmit={handleUpdateProfile}>
                 <h3 className="text-2xl font-light text-white mb-6">Profile</h3>
