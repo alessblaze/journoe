@@ -33,6 +33,7 @@ const CreateEntry = ({ onClose, onSave, isLoading, initialTitle = '', initialCon
   const plainTextLengthCache = useRef<{ raw: string; length: number } | null>(null);
   const saveInFlightRef = useRef(false);
   const autosaveQueuedRef = useRef(false);
+  const manualSaveQueuedRef = useRef(false);
   const lastSavedSnapshotRef = useRef<string>('');
   const latestDraftRef = useRef({ title: initialTitle, content: initialContent, mood: initialMood });
 
@@ -77,8 +78,9 @@ const CreateEntry = ({ onClose, onSave, isLoading, initialTitle = '', initialCon
     }
 
     if (saveInFlightRef.current) {
-      if (isAutoSave) {
-        autosaveQueuedRef.current = true;
+      autosaveQueuedRef.current = true;
+      if (!isAutoSave) {
+        manualSaveQueuedRef.current = true;
       }
       return;
     }
@@ -96,11 +98,13 @@ const CreateEntry = ({ onClose, onSave, isLoading, initialTitle = '', initialCon
       if (autosaveQueuedRef.current) {
         // A successful manual save supersedes any autosave that queued while it was in flight.
         // Replaying that queued autosave can resend a stale version after the editor closes.
-        if (isAutoSave) {
-          autosaveQueuedRef.current = false;
+        const isManual = manualSaveQueuedRef.current;
+        autosaveQueuedRef.current = false;
+        manualSaveQueuedRef.current = false;
+        if (!isManual) {
           void saveDraft(true);
         } else {
-          autosaveQueuedRef.current = false;
+          void saveDraft(false);
         }
       }
     }

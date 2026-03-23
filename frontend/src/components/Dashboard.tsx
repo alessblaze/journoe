@@ -391,6 +391,7 @@ const Dashboard = () => {
 
       const versionToSend = editVersionRef.current ?? editingEntry.version;
       const updatedEntry = await api.entries.update(editingEntry.id, encryptedTitle, encryptedContent, versionToSend, encryptedMood, editingEntry.is_sticky);
+      
       const updated: Entry = {
         ...editingEntry,
         title: title || 'Untitled',
@@ -412,7 +413,7 @@ const Dashboard = () => {
         setEditingEntry(updated);
       }
     } catch (error: any) {
-      if (error instanceof ApiError && error.status === 409) {
+      if (error?.status === 409 || (error instanceof ApiError && error.status === 409)) {
         try {
           const latestEntry = await loadLatestEncryptedEntry(editingEntry.id);
           if (latestEntry) {
