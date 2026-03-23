@@ -53,6 +53,9 @@ const Dashboard = () => {
   const editVersionRef = useRef<number | null>(null);
   const editIdRef = useRef<string | number | null>(null);
 
+  // Track if a save is currently in flight to fix the 1000ms race condition
+  const saveInFlightRef = useRef<{ id: string | number; timestamp: number } | null>(null);
+
   // Serialization locks to prevent rapid typing from firing overlapping autosaves
   // which causes 409 Conflicts by reusing stale version refs.
   const isSavingRef = useRef(false);
@@ -142,26 +145,38 @@ const Dashboard = () => {
         setEntries(prev => prev.map(entry => entry.id === updatedEntry.id ? entryWithDecryptedData : entry));
         setSelectedEntry(prev => prev?.id === updatedEntry.id ? entryWithDecryptedData : prev);
 
-        // If this entry is NOT being actively edited, sync the list card only.
-        // If it IS open in the editor, we delay the version check by 1000ms before warning.
-        // Why? Because the server broadcasts SSEs to ALL connected clients, including us!
-        // If the SSE beats the HTTP PUT response back to this browser by a few milliseconds,
-        // we would incorrectly think "another browser" saved it and trigger a false-positive toast.
-        // A 1-second delay ensures our own local save promise resolves and updates the refs first.
-        setTimeout(() => {
-          if (String(editIdRef.current) === String(updatedEntry.id)) {
-            if (editVersionRef.current !== null && updatedEntry.version > editVersionRef.current) {
-              showWarning('Another browser saved a newer version of this entry. Your next save will fail to prevent overwriting their changes.');
-            }
+        // If this entry is currently being edited:
+        // 1. Update version reference to avoid conflict
+        // 2. Update non-content fields (mood, sticky)
+        // 3. Don't overwrite title/content (user's edits)
+        // 4. Only show warning if NOT from our own save
+        if (String(editIdRef.current) === String(updatedEntry.id)) {
+          const isOurSave = saveInFlightRef.current && String(saveInFlightRef.current.id) === String(updatedEntry.id);
+          
+          if (!isOurSave && editVersionRef.current !== null && updatedEntry.version > editVersionRef.current) {
+            showWarning('Another browser saved a newer version of this entry. Your local edits will be preserved but may conflict on save.');
           }
+          
+          // Update version ref and editingEntry with non-content changes
+          editVersionRef.current = updatedEntry.version;
+          setEditingEntry(prev => {
+            if (!prev || prev.id !== updatedEntry.id) return prev;
+            return {
+              ...prev,
+              version: updatedEntry.version,
+              mood: entryWithDecryptedData.mood,
+              is_sticky: entryWithDecryptedData.is_sticky,
+              updated_at: updatedEntry.updated_at,
+            };
+          });
+        }
 
-          // Patch background shadow trackers for the CREATE autosave flow.
-          if (autosaveMetaRef.current && String(autosaveMetaRef.current.id) === String(updatedEntry.id)) {
-            if (updatedEntry.version > autosaveMetaRef.current.version) {
-              showWarning('Another browser modified this new entry. Your next save will fail to prevent overwriting their changes.');
-            }
+        // Patch background shadow trackers for the CREATE autosave flow.
+        if (autosaveMetaRef.current && String(autosaveMetaRef.current.id) === String(updatedEntry.id)) {
+          if (updatedEntry.version > autosaveMetaRef.current.version) {
+            showWarning('Another browser modified this new entry. Your next save will fail to prevent overwriting their changes.');
           }
-        }, 1000);
+        }
       } catch { }
     };
 
@@ -376,13 +391,16 @@ const Dashboard = () => {
   };
 
   const executeHandleEdit = async (title: string, content: string, mood?: string, isAutoSave: boolean = false) => {
-    setCreating(true);
     if (!editingEntry) return;
     if (!encryptionKey) {
       setError('Encryption key not found. Please set it in Settings.');
       setCreating(false);
       return;
     }
+    
+    setCreating(true);
+    saveInFlightRef.current = { id: editingEntry.id, timestamp: Date.now() };
+    
     try {
       const key = await cryptoService.importKey(encryptionKey);
       const encryptedContent = await cryptoService.encrypt(content, key);
@@ -431,12 +449,16 @@ const Dashboard = () => {
       }
     } finally {
       setCreating(false);
+      saveInFlightRef.current = null;
     }
   };
 
   const togglePin = async (e: React.MouseEvent, entry: Entry) => {
     e.stopPropagation();
     if (!encryptionKey) return;
+    
+    saveInFlightRef.current = { id: entry.id, timestamp: Date.now() };
+    
     try {
       const key = await cryptoService.importKey(encryptionKey);
       const encryptedContent = await cryptoService.encrypt(entry.content, key);
@@ -467,6 +489,8 @@ const Dashboard = () => {
       }
     } catch (error: any) {
       setError('Failed to pin entry: ' + error.message);
+    } finally {
+      saveInFlightRef.current = null;
     }
   };
 
