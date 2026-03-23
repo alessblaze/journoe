@@ -35,6 +35,7 @@ The backend runs on port `:8080`.
 ### 3. Frontend (React/Vite)
 ```bash
 cd frontend
+cp .env.example .env
 npm install
 npm run dev
 ```
