@@ -613,9 +613,21 @@ const Dashboard = () => {
               <ViewEntry
                 entry={selectedEntry}
                 onClose={() => setSelectedEntry(null)}
-                onEdit={() => {
-                  setEditingEntry(selectedEntry);
-                  setSelectedEntry(null);
+                onEdit={async () => {
+                  try {
+                    const latestEntry = await loadLatestEncryptedEntry(selectedEntry.id);
+                    if (latestEntry) {
+                      setEditingEntry(latestEntry);
+                      setEntries(prev => prev.map(e => e.id === latestEntry.id ? latestEntry : e));
+                      setSelectedEntry(null);
+                    } else {
+                      setEditingEntry(selectedEntry);
+                      setSelectedEntry(null);
+                    }
+                  } catch {
+                    setEditingEntry(selectedEntry);
+                    setSelectedEntry(null);
+                  }
                 }}
               />
             )}
