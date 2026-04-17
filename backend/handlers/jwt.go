@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -18,23 +19,21 @@ import (
 )
 
 var (
-	AccessTokenCookie  = "access_token"
-	RefreshTokenCookie = "refresh_token"
-	ResetTokenCookie   = "reset_token"
-	CookieMaxAge       = 15 * 60           // 15 minutes in seconds
-	RefreshMaxAge      = 30 * 24 * 60 * 60 // 30 days in seconds
-	ResetTokenMaxAge   = 5 * 60            // 5 minutes in seconds
-	jwtKey             []byte
+	AccessTokenCookie   = "access_token"
+	RefreshTokenCookie  = "refresh_token"
+	ResetTokenCookie    = "reset_token"
+	CookieMaxAge        = 15 * 60           // 15 minutes in seconds
+	RefreshMaxAge       = 30 * 24 * 60 * 60 // 30 days in seconds
+	ResetTokenMaxAge    = 5 * 60            // 5 minutes in seconds
+	jwtLegacyKey        []byte
+	jwtActiveKID        string
+	jwtSigningKey       []byte
+	jwtVerificationKeys map[string][]byte
 )
 
-func InitJWTKey() error {
-	secret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
-	if secret == "" {
-		return errors.New("JWT_SECRET must be set")
-	}
-
+func validateJWTSecretValue(secret string, source string) error {
 	if len(secret) < 32 {
-		return errors.New("JWT_SECRET must be at least 32 characters long")
+		return fmt.Errorf("%s must be at least 32 characters long", source)
 	}
 
 	weakSecrets := map[string]struct{}{
@@ -45,15 +44,112 @@ func InitJWTKey() error {
 		"jwt-secret":                  {},
 	}
 	if _, isWeak := weakSecrets[strings.ToLower(secret)]; isWeak {
-		return errors.New("JWT_SECRET must not use a placeholder or weak default value")
+		return fmt.Errorf("%s must not use a placeholder or weak default value", source)
 	}
 
-	jwtKey = []byte(secret)
 	return nil
 }
 
-func getJWTKey() []byte {
-	return jwtKey
+func InitJWTKey() error {
+	jwtLegacyKey = nil
+	jwtActiveKID = ""
+	jwtSigningKey = nil
+	jwtVerificationKeys = make(map[string][]byte)
+
+	legacySecret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	if legacySecret != "" {
+		if err := validateJWTSecretValue(legacySecret, "JWT_SECRET"); err != nil {
+			return err
+		}
+		jwtLegacyKey = []byte(legacySecret)
+	}
+
+	keysEnv := strings.TrimSpace(os.Getenv("JWT_KEYS"))
+	if keysEnv == "" {
+		if len(jwtLegacyKey) == 0 {
+			return errors.New("JWT_SECRET must be set, or configure JWT_ACTIVE_KID with JWT_KEYS")
+		}
+		return nil
+	}
+
+	jwtActiveKID = strings.TrimSpace(os.Getenv("JWT_ACTIVE_KID"))
+	if jwtActiveKID == "" {
+		return errors.New("JWT_ACTIVE_KID must be set when JWT_KEYS is configured")
+	}
+
+	for _, rawEntry := range strings.Split(keysEnv, ",") {
+		entry := strings.TrimSpace(rawEntry)
+		if entry == "" {
+			continue
+		}
+
+		kid, secret, ok := strings.Cut(entry, ":")
+		if !ok {
+			return fmt.Errorf("invalid JWT_KEYS entry %q: expected kid:secret", entry)
+		}
+
+		kid = strings.TrimSpace(kid)
+		secret = strings.TrimSpace(secret)
+		if kid == "" {
+			return errors.New("JWT_KEYS entries must include a non-empty kid")
+		}
+		if secret == "" {
+			return fmt.Errorf("JWT_KEYS entry %q is missing a secret", kid)
+		}
+		if err := validateJWTSecretValue(secret, fmt.Sprintf("JWT_KEYS entry %q", kid)); err != nil {
+			return err
+		}
+		if _, exists := jwtVerificationKeys[kid]; exists {
+			return fmt.Errorf("JWT_KEYS contains duplicate kid %q", kid)
+		}
+
+		jwtVerificationKeys[kid] = []byte(secret)
+	}
+
+	if len(jwtVerificationKeys) == 0 {
+		return errors.New("JWT_KEYS must contain at least one key")
+	}
+
+	signingKey, ok := jwtVerificationKeys[jwtActiveKID]
+	if !ok {
+		kids := make([]string, 0, len(jwtVerificationKeys))
+		for kid := range jwtVerificationKeys {
+			kids = append(kids, kid)
+		}
+		slices.Sort(kids)
+		return fmt.Errorf("JWT_ACTIVE_KID %q was not found in JWT_KEYS (%s)", jwtActiveKID, strings.Join(kids, ", "))
+	}
+
+	jwtSigningKey = signingKey
+	return nil
+}
+
+func getJWTSigningKey() ([]byte, string) {
+	if len(jwtSigningKey) > 0 && jwtActiveKID != "" {
+		return jwtSigningKey, jwtActiveKID
+	}
+	return jwtLegacyKey, ""
+}
+
+func getJWTVerificationKey(token *jwt.Token) (interface{}, error) {
+	if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		return nil, errors.New("unexpected signing method")
+	}
+
+	kid, _ := token.Header["kid"].(string)
+	if kid != "" {
+		key, ok := jwtVerificationKeys[kid]
+		if !ok {
+			return nil, fmt.Errorf("unknown signing key id %q", kid)
+		}
+		return key, nil
+	}
+
+	if len(jwtLegacyKey) == 0 {
+		return nil, errors.New("token is missing kid and no legacy JWT_SECRET is configured")
+	}
+
+	return jwtLegacyKey, nil
 }
 
 func extractTokenFromCookieOrHeader(c *gin.Context, cookieName string) (string, error) {
@@ -82,7 +178,12 @@ func GenerateAccessToken(userID uint, passwordVersion string) (string, error) {
 		"type":             "access",
 	})
 
-	return token.SignedString(getJWTKey())
+	signingKey, kid := getJWTSigningKey()
+	if kid != "" {
+		token.Header["kid"] = kid
+	}
+
+	return token.SignedString(signingKey)
 }
 
 func GenerateRefreshToken(userID uint, passwordVersion string) (string, error) {
@@ -93,7 +194,12 @@ func GenerateRefreshToken(userID uint, passwordVersion string) (string, error) {
 		"type":             "refresh",
 	})
 
-	return token.SignedString(getJWTKey())
+	signingKey, kid := getJWTSigningKey()
+	if kid != "" {
+		token.Header["kid"] = kid
+	}
+
+	return token.SignedString(signingKey)
 }
 
 func GenerateShortLivedToken(userID uint, passwordVersion string, sensitiveActionVersion string) (string, error) {
@@ -105,16 +211,16 @@ func GenerateShortLivedToken(userID uint, passwordVersion string, sensitiveActio
 		"type":                     "short",
 	})
 
-	return token.SignedString(getJWTKey())
+	signingKey, kid := getJWTSigningKey()
+	if kid != "" {
+		token.Header["kid"] = kid
+	}
+
+	return token.SignedString(signingKey)
 }
 
 func ValidateJWT(tokenString string) (jwt.MapClaims, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("unexpected signing method")
-		}
-		return getJWTKey(), nil
-	})
+	token, err := jwt.Parse(tokenString, getJWTVerificationKey)
 
 	if err != nil {
 		return nil, err

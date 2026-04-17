@@ -28,7 +28,7 @@ psql -U postgres -c "CREATE DATABASE journal_app;"
 ```bash
 cd backend
 cp .env.example .env
-# Edit .env to set your JWT_SECRET and COOKIE_DOMAIN_ALLOWLIST
+# Edit .env to set your JWT secret configuration and COOKIE_DOMAIN_ALLOWLIST
 go mod download
 go run main.go
 ```
@@ -51,7 +51,7 @@ The Docker stack runs the frontend, backend, and PostgreSQL together through [do
 ```bash
 cd docker
 cp .env.localhost.example .env.localhost
-# Edit .env.localhost to change JWT_SECRET, admin credentials, or DB passwords
+# Edit .env.localhost to change JWT secret configuration, admin credentials, or DB passwords
 ```
 
 ### 2. Start the stack

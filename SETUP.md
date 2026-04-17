@@ -17,7 +17,8 @@ cp .env.example .env
 ```
 Open `.env` and ensure the following critical fields are updated:
 - `DB_USER` & `DB_PASSWORD` (Your local postgres credentials)
-- `JWT_SECRET` (Must be at least 32 characters long. Do not use placeholders)
+- `JWT_SECRET` (Legacy single signing key. Must be at least 32 characters long. Do not use placeholders)
+- `JWT_ACTIVE_KID` and `JWT_KEYS` (Optional multi-key rotation config for seamless key rollover)
 - `COOKIE_DOMAIN_ALLOWLIST` (Essential for preventing session hijacking)
 - `DEBUGLOGS` (Set to "true" to trace token revocation and authentication issues)
 
@@ -53,6 +54,8 @@ cp .env.localhost.example .env.localhost
 ```
 Update at least these values in `docker/.env.localhost`:
 - `JWT_SECRET`
+- `JWT_ACTIVE_KID`
+- `JWT_KEYS`
 - `INITIAL_ADMIN_EMAIL`
 - `INITIAL_ADMIN_PASSWORD`
 - `DB_PASSWORD` / `POSTGRES_PASSWORD` if you do not want the local defaults

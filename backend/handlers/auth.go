@@ -74,8 +74,6 @@ func verifyTurnstile(token string, remoteIP string) bool {
 	return result.Success
 }
 
-
-
 func Register(c *gin.Context) {
 	// Reject requests from already-authenticated sessions to prevent account spam
 	if token, err := extractTokenFromCookieOrHeader(c, AccessTokenCookie); err == nil && token != "" {
@@ -139,11 +137,11 @@ func Register(c *gin.Context) {
 		c.JSON(http.StatusCreated, gin.H{
 			"message": "User registered successfully",
 			"user": gin.H{
-			"id":       user.ID,
-			"username": user.Username,
-			"email":    user.Email,
-			"is_admin": user.IsAdmin,
-		},
+				"id":       user.ID,
+				"username": user.Username,
+				"email":    user.Email,
+				"is_admin": user.IsAdmin,
+			},
 		})
 		return
 	}
@@ -199,11 +197,11 @@ func Login(c *gin.Context) {
 		setAuthCookies(c, accessToken, refreshToken)
 		c.JSON(http.StatusOK, gin.H{
 			"user": gin.H{
-			"id":       user.ID,
-			"username": user.Username,
-			"email":    user.Email,
-			"is_admin": user.IsAdmin,
-		},
+				"id":       user.ID,
+				"username": user.Username,
+				"email":    user.Email,
+				"is_admin": user.IsAdmin,
+			},
 		})
 		return
 	}
@@ -301,6 +299,7 @@ func Refresh(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"token": newAccessToken,
+		"token":         newAccessToken,
+		"refresh_token": newRefreshToken,
 	})
 }
