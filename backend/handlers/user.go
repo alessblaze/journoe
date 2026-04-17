@@ -165,7 +165,13 @@ func VerifySensitiveAction(c *gin.Context) {
 		return
 	}
 
-	shortToken, err := GenerateShortLivedToken(user.ID, user.PasswordVersion)
+	sensitiveActionVersion := uuid.New().String()
+	if err := config.DB.Model(&models.User{}).Where("id = ?", userID).Update("sensitive_action_version", sensitiveActionVersion).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare verification token"})
+		return
+	}
+
+	shortToken, err := GenerateShortLivedToken(user.ID, user.PasswordVersion, sensitiveActionVersion)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate verification token"})
 		return
@@ -220,8 +226,9 @@ func UpdateKeyFingerprint(c *gin.Context) {
 		// Verify password_version to ensure the short-lived token was not issued
 		// before a password change (which would have rotated the version).
 		tokenVersion, _ := claims["password_version"].(string)
+		sensitiveActionVersion, _ := claims["sensitive_action_version"].(string)
 		var freshUser models.User
-		if err := config.DB.Select("password_version").First(&freshUser, userID).Error; err != nil {
+		if err := config.DB.Select("password_version", "sensitive_action_version").First(&freshUser, userID).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify token validity"})
 			return
 		}
@@ -229,13 +236,21 @@ func UpdateKeyFingerprint(c *gin.Context) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session revoked due to password change. Please re-authenticate."})
 			return
 		}
+		if sensitiveActionVersion == "" || sensitiveActionVersion != freshUser.SensitiveActionVersion {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Recent password verification has already been used. Please verify again."})
+			return
+		}
 	}
 
-	if err := config.DB.Model(&models.User{}).Where("id = ?", userID).Update("key_fingerprint", req.Fingerprint).Error; err != nil {
+	if err := config.DB.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"key_fingerprint":          req.Fingerprint,
+		"sensitive_action_version": uuid.New().String(),
+	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update key fingerprint"})
 		return
 	}
 
+	setResetTokenCookie(c, "")
 	c.JSON(http.StatusOK, gin.H{"message": "Key fingerprint updated"})
 }
 

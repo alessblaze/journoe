@@ -7,16 +7,17 @@ import (
 )
 
 type User struct {
-	ID        uint           `json:"id" gorm:"primaryKey"`
-	Email     string         `json:"email" gorm:"uniqueIndex;not null"`
-	Username  string         `json:"username" gorm:"not null"`
-	Password        string         `json:"-" gorm:"not null"`
-	PasswordVersion string         `json:"-"`
-	IsAdmin         bool           `json:"is_admin" gorm:"default:false"`
-	KeyFingerprint string         `json:"key_fingerprint,omitempty" gorm:"size:64"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
-	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
+	ID                     uint           `json:"id" gorm:"primaryKey"`
+	Email                  string         `json:"email" gorm:"uniqueIndex;not null"`
+	Username               string         `json:"username" gorm:"not null"`
+	Password               string         `json:"-" gorm:"not null"`
+	PasswordVersion        string         `json:"-"`
+	SensitiveActionVersion string         `json:"-"`
+	IsAdmin                bool           `json:"is_admin" gorm:"default:false"`
+	KeyFingerprint         string         `json:"key_fingerprint,omitempty" gorm:"size:64"`
+	CreatedAt              time.Time      `json:"created_at"`
+	UpdatedAt              time.Time      `json:"updated_at"`
+	DeletedAt              gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 type SystemConfig struct {

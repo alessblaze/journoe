@@ -96,12 +96,13 @@ func GenerateRefreshToken(userID uint, passwordVersion string) (string, error) {
 	return token.SignedString(getJWTKey())
 }
 
-func GenerateShortLivedToken(userID uint, passwordVersion string) (string, error) {
+func GenerateShortLivedToken(userID uint, passwordVersion string, sensitiveActionVersion string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"user_id":          userID,
-		"password_version": passwordVersion,
-		"exp":              time.Now().Add(time.Minute * 5).Unix(),
-		"type":             "short",
+		"user_id":                  userID,
+		"password_version":         passwordVersion,
+		"sensitive_action_version": sensitiveActionVersion,
+		"exp":                      time.Now().Add(time.Minute * 5).Unix(),
+		"type":                     "short",
 	})
 
 	return token.SignedString(getJWTKey())
@@ -209,7 +210,6 @@ func AuthMiddleware() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Session revoked due to password change"})
 			return
 		}
-
 		c.Set("user_id", userID)
 		c.Next()
 	}
@@ -236,6 +236,7 @@ func ShortLivedAuthMiddleware() gin.HandlerFunc {
 		}
 
 		tokenVersion, _ := claims["password_version"].(string)
+		sensitiveActionVersion, _ := claims["sensitive_action_version"].(string)
 
 		var user models.User
 		if err := config.DB.First(&user, userID).Error; err != nil {
@@ -244,6 +245,10 @@ func ShortLivedAuthMiddleware() gin.HandlerFunc {
 		}
 		if tokenVersion != user.PasswordVersion {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Session revoked due to password change"})
+			return
+		}
+		if sensitiveActionVersion == "" || sensitiveActionVersion != user.SensitiveActionVersion {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Sensitive action verification has already been used or replaced"})
 			return
 		}
 

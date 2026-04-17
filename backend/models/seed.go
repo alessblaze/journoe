@@ -20,6 +20,15 @@ func SeedInitialData(db *gorm.DB) {
 		log.Printf("Backfilled password_version for %d existing user(s)", result.RowsAffected)
 	}
 
+	// 0b. Backfill sensitive_action_version for any pre-migration users so
+	// short-lived verification tokens can be bound to a server-side value.
+	result = db.Model(&User{}).Where("sensitive_action_version IS NULL OR sensitive_action_version = ''").Updates(map[string]any{
+		"sensitive_action_version": uuid.New().String(),
+	})
+	if result.RowsAffected > 0 {
+		log.Printf("Backfilled sensitive_action_version for %d existing user(s)", result.RowsAffected)
+	}
+
 	// 1. Seed System Config
 	var configCount int64
 	db.Model(&SystemConfig{}).Count(&configCount)
@@ -51,11 +60,12 @@ func SeedInitialData(db *gorm.DB) {
 			log.Fatal("Failed to hash admin password: ", err)
 		}
 		admin := User{
-			Username:        "Admin",
-			Email:           adminEmail,
-			Password:        string(hashedPassword),
-			PasswordVersion: uuid.New().String(),
-			IsAdmin:         true,
+			Username:               "Admin",
+			Email:                  adminEmail,
+			Password:               string(hashedPassword),
+			PasswordVersion:        uuid.New().String(),
+			SensitiveActionVersion: uuid.New().String(),
+			IsAdmin:                true,
 		}
 		db.Create(&admin)
 

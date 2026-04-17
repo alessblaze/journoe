@@ -11,6 +11,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -o /journal-server .
 
 FROM alpine:3.20
 WORKDIR /app
+RUN apk upgrade --no-cache
+RUN apk add --no-cache ca-certificates
 RUN adduser -D -u 10001 appuser
 COPY --from=build /journal-server /usr/local/bin/journal-server
 USER appuser
