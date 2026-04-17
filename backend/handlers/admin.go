@@ -134,6 +134,7 @@ func UpdateUserPassword(c *gin.Context) {
 		return
 	}
 
+	DisconnectUser(id)
 	c.JSON(http.StatusOK, gin.H{"message": "Password updated successfully"})
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var keyFingerprintPattern = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
@@ -197,56 +198,79 @@ func UpdateKeyFingerprint(c *gin.Context) {
 		return
 	}
 
-	var user models.User
-	if err := config.DB.Select("id", "key_fingerprint").First(&user, userID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-		return
-	}
+	var (
+		userNotFoundErr            = errors.New("user not found")
+		recentVerificationRequired = errors.New("recent verification required")
+		sessionRevokedErr          = errors.New("session revoked")
+		recentVerificationConsumed = errors.New("recent verification consumed")
+	)
 
-	requiresRecentVerification := user.KeyFingerprint != "" && user.KeyFingerprint != req.Fingerprint
-	if requiresRecentVerification {
-		token, err := extractTokenFromCookieOrHeader(c, ResetTokenCookie)
-		if err != nil {
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		var user models.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id", "key_fingerprint", "password_version", "sensitive_action_version").
+			First(&user, userID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return userNotFoundErr
+			}
+			return err
+		}
+
+		requiresRecentVerification := user.KeyFingerprint != "" && user.KeyFingerprint != req.Fingerprint
+		if requiresRecentVerification {
+			token, err := extractTokenFromCookieOrHeader(c, ResetTokenCookie)
+			if err != nil {
+				return recentVerificationRequired
+			}
+
+			claims, err := ValidateShortLivedToken(token)
+			if err != nil {
+				return recentVerificationRequired
+			}
+
+			tokenUserID, err := extractUserIDFromClaims(claims)
+			if err != nil || tokenUserID != userID {
+				return recentVerificationRequired
+			}
+
+			tokenVersion, _ := claims["password_version"].(string)
+			if tokenVersion != user.PasswordVersion {
+				return sessionRevokedErr
+			}
+
+			sensitiveActionVersion, _ := claims["sensitive_action_version"].(string)
+			if sensitiveActionVersion == "" || sensitiveActionVersion != user.SensitiveActionVersion {
+				return recentVerificationConsumed
+			}
+
+			if result := tx.Model(&models.User{}).
+				Where("id = ? AND sensitive_action_version = ?", userID, sensitiveActionVersion).
+				Updates(map[string]any{
+					"key_fingerprint":          req.Fingerprint,
+					"sensitive_action_version": uuid.New().String(),
+				}); result.Error != nil {
+				return result.Error
+			} else if result.RowsAffected == 0 {
+				return recentVerificationConsumed
+			}
+
+			return nil
+		}
+
+		return tx.Model(&models.User{}).Where("id = ?", userID).Update("key_fingerprint", req.Fingerprint).Error
+	}); err != nil {
+		switch err {
+		case userNotFoundErr:
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		case recentVerificationRequired:
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Recent password verification is required to change the encryption key fingerprint"})
-			return
-		}
-
-		claims, err := ValidateShortLivedToken(token)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Recent password verification is required to change the encryption key fingerprint"})
-			return
-		}
-
-		tokenUserID, err := extractUserIDFromClaims(claims)
-		if err != nil || tokenUserID != userID {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Recent password verification is required to change the encryption key fingerprint"})
-			return
-		}
-
-		// Verify password_version to ensure the short-lived token was not issued
-		// before a password change (which would have rotated the version).
-		tokenVersion, _ := claims["password_version"].(string)
-		sensitiveActionVersion, _ := claims["sensitive_action_version"].(string)
-		var freshUser models.User
-		if err := config.DB.Select("password_version", "sensitive_action_version").First(&freshUser, userID).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify token validity"})
-			return
-		}
-		if tokenVersion != freshUser.PasswordVersion {
+		case sessionRevokedErr:
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session revoked due to password change. Please re-authenticate."})
-			return
-		}
-		if sensitiveActionVersion == "" || sensitiveActionVersion != freshUser.SensitiveActionVersion {
+		case recentVerificationConsumed:
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Recent password verification has already been used. Please verify again."})
-			return
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update key fingerprint"})
 		}
-	}
-
-	if err := config.DB.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
-		"key_fingerprint":          req.Fingerprint,
-		"sensitive_action_version": uuid.New().String(),
-	}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update key fingerprint"})
 		return
 	}
 
